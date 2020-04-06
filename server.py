@@ -11,7 +11,7 @@ class ServerHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 
         with open("layer7output_v2.txt", "a") as outfile:
-            outfile.write(self.path + ": " + post_body + "\n---\n")
+            outfile.write(self.path + ": " + time.strftime("%Y%m%d-%H%M%S") + post_body + "\n---\n")
             outfile.close()
 
 
