@@ -30,8 +30,9 @@ env = config.get('SignalFx', 'env')
 log_file = config.get('Logging','file')
 dopost = bool(config.get('SignalFx','dopost'))
 
-logging.basicConfig(filename=log_file, filemode='w', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logging.info("Loaded config(" + "service-" + service + ",version-" + version + ",realm-" + realm + ",env-" + env + ")")
+logger = logging.getLogger('L7-sfx-forwarder')
+logging.basicConfig(filename=log_file, filemode='w', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logger.info("Loaded config(" + "service-" + service + ",version-" + version + ",realm-" + realm + ",env-" + env + ")")
 
 
 # Post metric data to SignalFx
@@ -47,14 +48,18 @@ class SFxHandler():
          }
 
     def post_dp(self,dp):
+        logger.debug("Sending datapoint - " + str(dp))
         r = requests.post(self.endpoint_dp,headers=self.headers, json=dp)
+        logger.debug("HTTP Status code - " +  str(r.status_code))
         if r.status_code != 200:
-            logging.error("Bad Request:" + r.status_code)
+            logger.error("Bad Request:" + str(r.status_code))
 
     def put_tags(self, tags, dk, dv):
+        logger.debug("Sending datapoint - " + str(tags))
         r = requests.put(self.endpoint_tags + '/' + dk + '/' + dv, headers=self.headers, json=tags)
+        logger.debug("HTTP Status code - " + str(r.status_code))
         if r.status_code != 200:
-            logging.error("Bad Request:" + r.status_code)
+            logger.error("Bad Request:" + str(r.status_code))
 
 
 # Convert Layer7 v 9.3 APM Metrics to SignalFx datapoints
@@ -139,6 +144,8 @@ def l72sfx(metric_data):
             for i in v:
                 # Identify Service metric elements
                 if 'Services' in i['name']:
+                    logger.debug("Metric dimensions - " + i['name'])
+                    logger.debug("Metric value - " + i['value'])
                     # Get Dimensions
                     dims = re.findall("[\w\-.*/() ]+", i['name'])
                     # Get the Layer 7 provided names
@@ -167,10 +174,10 @@ class ServerHandler(SimpleHTTPRequestHandler):
 
 
 def run(port):
+    logger.info("Serving at port " + str(port))
     httpd = SocketServer.TCPServer(("", port), ServerHandler)
     httpd.serve_forever()
 
 
-logging.info("Serving at port ", port)
 run(int(port))
 
