@@ -1,18 +1,27 @@
+######################################################################
+# Broadcom Layer 7 API Gateway metrics forwarder to SignalFx
+# Prototype for Proof of Concept
+# khymers@splunk.com
+# v3 - changing to use grequests to async calls
+#######################################################################
+
 from SimpleHTTPServer import SimpleHTTPRequestHandler
 import SocketServer
-import time
 import argparse
 import logging
+from logging.handlers import RotatingFileHandler
 import ConfigParser
 import json
-import requests
+import grequests
 import re
+
 
 def process_args():
     parser = argparse.ArgumentParser(description='Splunk SignalFx Layer7 Metrics Forwarder')
     parser.add_argument('-c','--config', help='forwarder configuration file', required=True)
     parser.add_argument('-t','--token', help='signalfx access token', required=True)
     return parser.parse_args()
+
 
 # Apply Configuration
 args = process_args()
@@ -28,11 +37,18 @@ version = config.get('SignalFx', 'version')
 env = config.get('SignalFx', 'env')
 
 log_file = config.get('Logging','file')
+log_level = getattr(logging, config.get('Logging', 'level').upper())
 dopost = bool(config.get('SignalFx','dopost'))
 
-logger = logging.getLogger('L7-sfx-forwarder')
-logging.basicConfig(filename=log_file, filemode='w', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-logger.info("Loaded config(" + "service-" + service + ",version-" + version + ",realm-" + realm + ",env-" + env + ")")
+log_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=2)
+log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+log_handler.setFormatter(log_formatter)
+
+logger = logging.getLogger(__name__)
+logger.setLevel(log_level)
+logger.addHandler(log_handler)
+
+logger.info("Loaded config(" + "service=" + service + ",version=" + version + ",realm=" + realm + ",env=" + env + ")")
 
 
 # Post metric data to SignalFx
@@ -47,19 +63,29 @@ class SFxHandler():
             'X-SF-TOKEN': t
          }
 
-    def post_dp(self,dp):
-        logger.debug("Sending datapoint - " + str(dp))
-        r = requests.post(self.endpoint_dp,headers=self.headers, json=dp)
-        logger.debug("HTTP Status code - " +  str(r.status_code))
-        if r.status_code != 200:
-            logger.error("Bad Request:" + str(r.status_code))
+    def exception_handler(self, request, exception):
+        print("Request failed" + str(request) + str(exception.message))
+
+
+    def post_dp(self,dps):
+        logger.debug("Sending datapoints - " + str(dps) + ";")
+        req = (grequests.post(self.endpoint_dp,headers=self.headers, json=dp) for dp in dps)
+        rs = grequests.map(req)
+        logger.debug("Responses:" + str(rs))
+        # Check for errors
+        i = 0
+        for r in rs:
+            if r.status_code != 200:
+                logger.error("HTTP Error:" + str(r.status_code) + " " + str(r.reason) + "; Request:" + str(dps[i]))
+                i = i + 1
 
     def put_tags(self, tags, dk, dv):
         logger.debug("Sending datapoint - " + str(tags))
-        r = requests.put(self.endpoint_tags + '/' + dk + '/' + dv, headers=self.headers, json=tags)
-        logger.debug("HTTP Status code - " + str(r.status_code))
-        if r.status_code != 200:
-            logger.error("Bad Request:" + str(r.status_code))
+        req = [grequests.put(self.endpoint_tags + '/' + dk + '/' + dv, headers=self.headers, json=tags)]
+        rs = grequests.map(req)
+        logger.debug("Responses:" + str(rs))
+        if rs[0].status_code != 200:
+            logger.error("HTTP Error:" + str(r.status_code) + " " + str(r.reason) + "; Request:" + str(tags))
 
 
 # Convert Layer7 v 9.3 APM Metrics to SignalFx datapoints
@@ -168,9 +194,9 @@ class ServerHandler(SimpleHTTPRequestHandler):
 
         dps, host = l72sfx(post_body)
         if dopost:
-            for dp in dps:
-                sfxh.post_dp(dp)
-            sfxh.put_tags(get_sfx_tags("host",host),"host",host)
+            if dps:
+                sfxh.post_dp(dps)
+                sfxh.put_tags(get_sfx_tags("host",host),"host",host)
 
 
 def run(port):
@@ -179,5 +205,6 @@ def run(port):
     httpd.serve_forever()
 
 
-run(int(port))
+if __name__ == "__main__":
+    run(int(port))
 
