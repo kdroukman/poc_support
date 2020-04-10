@@ -2,7 +2,7 @@
 # Broadcom Layer 7 API Gateway metrics forwarder to SignalFx
 # Prototype for Proof of Concept
 # khymers@splunk.com
-# v3 - changing to use grequests to async calls
+# v4 - updating for compatibility with old Python versions
 #######################################################################
 
 from SimpleHTTPServer import SimpleHTTPRequestHandler
@@ -12,7 +12,8 @@ import logging
 from logging.handlers import RotatingFileHandler
 import ConfigParser
 import json
-import grequests
+import requests
+import threading
 import re
 
 
@@ -63,29 +64,21 @@ class SFxHandler():
             'X-SF-TOKEN': t
          }
 
-    def exception_handler(self, request, exception):
-        print("Request failed" + str(request) + str(exception.message))
 
-
-    def post_dp(self,dps):
-        logger.debug("Sending datapoints - " + str(dps) + ";")
-        req = (grequests.post(self.endpoint_dp,headers=self.headers, json=dp) for dp in dps)
-        rs = grequests.map(req)
+    def post_dp(self,dp):
+        logger.debug("Sending datapoint - " + str(dp))
+        rs = requests.post(self.endpoint_dp,headers=self.headers, json=dp)
         logger.debug("Responses:" + str(rs))
-        # Check for errors
-        i = 0
-        for r in rs:
-            if r.status_code != 200:
-                logger.error("HTTP Error:" + str(r.status_code) + " " + str(r.reason) + "; Request:" + str(dps[i]))
-                i = i + 1
+        if rs.status_code != 200:
+            logger.error("HTTP Error:" + str(rs.status_code) + " " + str(rs.reason) + "; Request:" + str(dp))
+
 
     def put_tags(self, tags, dk, dv):
         logger.debug("Sending datapoint - " + str(tags))
-        req = [grequests.put(self.endpoint_tags + '/' + dk + '/' + dv, headers=self.headers, json=tags)]
-        rs = grequests.map(req)
+        rs = requests.put(self.endpoint_tags + '/' + dk + '/' + dv, headers=self.headers, json=tags)
         logger.debug("Responses:" + str(rs))
-        if rs[0].status_code != 200:
-            logger.error("HTTP Error:" + str(r.status_code) + " " + str(r.reason) + "; Request:" + str(tags))
+        if rs.status_code != 200:
+            logger.error("HTTP Error:" + str(rs.status_code) + " " + str(rs.reason) + "; Request:" + str(tags))
 
 
 # Convert Layer7 v 9.3 APM Metrics to SignalFx datapoints
@@ -193,9 +186,13 @@ class ServerHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 
         dps, host = l72sfx(post_body)
-        if dopost:
-            if dps:
-                sfxh.post_dp(dps)
+        if not dps:
+            logger.debug("Request received - no APM data to forward.")
+        else:
+            if dopost:
+                for dp in dps:
+                    thread = threading.Thread(target=sfxh.post_dp, args=[dp])
+                    thread.start()
                 sfxh.put_tags(get_sfx_tags("host",host),"host",host)
 
 
