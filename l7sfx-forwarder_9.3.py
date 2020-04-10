@@ -2,7 +2,7 @@
 # Broadcom Layer 7 API Gateway metrics forwarder to SignalFx
 # Prototype for Proof of Concept
 # khymers@splunk.com
-# v4 - updating for compatibility with old Python versions
+# v5 - bug fix
 #######################################################################
 
 from SimpleHTTPServer import SimpleHTTPRequestHandler
@@ -85,7 +85,7 @@ class SFxHandler():
 def front_end_avg_response_time(dims, value):
     return {"gauge": [{
         "metric": "FrontEndAvgResponseTime.ms",
-        "dimensions": {"host": dims[0], "service_uri": dims[5]},
+        "dimensions": {"host": dims[0], "service_uri": dims[len(dims)-2]},
         "value": value}
     ]}
 
@@ -93,7 +93,7 @@ def front_end_avg_response_time(dims, value):
 def back_end_avg_response_time(dims, value):
     return {"gauge": [{
         "metric": "BackEndAvgResponseTime.ms",
-        "dimensions": {"host": dims[0], "service_uri": dims[5]},
+        "dimensions": {"host": dims[0], "service_uri": dims[len(dims)-2]},
         "value": value}
     ]}
 
@@ -101,7 +101,7 @@ def back_end_avg_response_time(dims, value):
 def request_size(dims, value):
     return {"gauge": [{
         "metric": "RequestSize.bytes",
-        "dimensions": {"host": dims[0], "service_uri": dims[5]},
+        "dimensions": {"host": dims[0], "service_uri": dims[len(dims)-2]},
         "value": value}
     ]}
 
@@ -109,7 +109,7 @@ def request_size(dims, value):
 def response_size(dims, value):
     return {"gauge": [{
         "metric": "ResponseSize.bytes",
-        "dimensions": {"host": dims[0], "service_uri": dims[5]},
+        "dimensions": {"host": dims[0], "service_uri": dims[len(dims)-2]},
         "value": value}
     ]}
 
@@ -117,7 +117,7 @@ def response_size(dims, value):
 def success_count(dims, value):
     return {"counter": [{
         "metric": "SuccessCount",
-        "dimensions": {"host": dims[0], "service_uri": dims[5]},
+        "dimensions": {"host": dims[0], "service_uri": dims[len(dims)-2]},
         "value": value}
     ]}
 
@@ -125,7 +125,7 @@ def success_count(dims, value):
 def total_requests(dims, value):
     return {"counter": [{
         "metric": "TotalRequests",
-        "dimensions": {"host": dims[0], "service_uri": dims[5]},
+        "dimensions": {"host": dims[0], "service_uri": dims[len(dims)-2]},
         "value": value}
     ]}
 
@@ -169,7 +169,7 @@ def l72sfx(metric_data):
                     dims = re.findall("[\w\-.*/() ]+", i['name'])
                     # Get the Layer 7 provided names
                     host = dims[0]
-                    metric_name  = dims[6]
+                    metric_name  = dims[len(dims)-1]
                     # Convert Layer 7 metric name to SignalFx metric format
                     sfx_datapoints.append(get_sfx_json(metric_name,dims,i['value']))
     return sfx_datapoints, host
